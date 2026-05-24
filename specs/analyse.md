@@ -11,6 +11,7 @@ The current React app contains a complete front-end MVP with:
 - No persistent storage.
 - No backend API.
 - No MCP tool layer.
+- No RAG pipeline, embeddings, vector database, or LLM answer generation.
 
 This is useful for validating the interaction model, but it is not sufficient for real trainer data because imported data disappears on refresh and the matching logic is not reusable by an agent.
 
@@ -24,6 +25,21 @@ The target state moves data and matching authority to Python:
 - Matching runs as a backend domain service.
 - React becomes a client of the API.
 - MCP tools call the same backend services.
+- Requirement document upload extracts text and infers structured match fields using rules.
+
+## RAG Assessment
+
+RAG is not part of the current architecture. The product currently works from structured trainer data, a canonical skills catalog, deterministic scoring, and rule-based field inference.
+
+RAG would become relevant if ATEM needs to search and cite unstructured evidence such as:
+
+- Coach CVs.
+- Project narratives.
+- Training feedback notes.
+- Client requirement documents.
+- Case studies or proposal documents.
+
+A future RAG architecture would require document ingestion, chunking, embeddings, vector storage, retrieval, answer generation, and citation handling. That is intentionally outside the MVP because the current matching problem can be handled with structured profile data and explainable scoring.
 
 ## Key Risks
 
@@ -77,6 +93,16 @@ Mitigation:
 
 - Put matching, search, and coverage logic in service modules.
 - FastAPI routes and MCP tools must call the same service functions.
+
+### RAG Scope Creep
+
+Adding RAG too early could make recommendations harder to validate and operate.
+
+Mitigation:
+
+- Keep MVP matching deterministic.
+- Use structured skill, region, comfort, industry, availability, appetite, and validation data.
+- Add RAG only when stakeholders confirm a need for semantic search across unstructured evidence.
 
 ## Recommended Backend Structure
 

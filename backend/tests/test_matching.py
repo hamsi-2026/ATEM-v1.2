@@ -11,7 +11,7 @@ def test_match_endpoint_returns_results() -> None:
                 "topic": "AI governance",
                 "meeting_type": "Intro call",
                 "industry": "Retail",
-                "region": "APAC",
+                "region": "SG",
                 "language": "English",
             },
         )

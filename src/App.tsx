@@ -1,8 +1,24 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import './App.css'
+import {
+  compareRequirement,
+  getCoverage,
+  getHealth,
+  getScoringConfig,
+  getSkillCatalog,
+  getTrainer,
+  importTrainers,
+  listTrainers,
+  matchTrainers,
+  updateScoringConfig,
+  type CoverageOut,
+  type MatchResponseOut,
+  type SkillCatalogCategoryOut,
+  type TrainerDetailOut,
+} from './api'
 
-type Region = 'APAC' | 'EMEA' | 'Americas' | 'Benelux'
+type Region = 'EMEA' | 'NA' | 'UK' | 'HK' | 'MY' | 'SG' | 'AUS'
 type MeetingType = 'Intro call' | 'Executive pitch' | 'Workshop' | 'Deep dive'
 type Desire = 'Actively seeking' | 'Open selectively' | 'Neutral' | 'Limited interest'
 type ValidationStatus = 'Self-declared' | 'Manager-validated' | 'Community-validated'
@@ -49,10 +65,15 @@ type Trainer = {
 type RequestState = {
   text: string
   topic: string
-  region: 'Any' | Region
-  meetingType: 'Any' | MeetingType
+  otherTopic: string
+  region: 'Any' | 'Other' | Region
+  otherRegion: string
+  meetingType: 'Any' | 'Other' | MeetingType
+  otherMeetingType: string
   industry: string
+  otherIndustry: string
   language: string
+  otherLanguage: string
   seniority: string
   stretchMode: boolean
 }
@@ -74,18 +95,131 @@ type MatchResult = {
   parts: Record<keyof Weights, number>
 }
 
-const meetingTypes: MeetingType[] = ['Intro call', 'Executive pitch', 'Workshop', 'Deep dive']
-const regions: Region[] = ['APAC', 'EMEA', 'Americas', 'Benelux']
-const industries = ['Banking', 'Retail', 'Public sector', 'Manufacturing', 'Technology', 'Healthcare']
-const topics = [
-  'AI governance',
-  'Cloud modernisation',
-  'Data analytics',
-  'Cybersecurity',
-  'Change management',
-  'Automation',
-]
+type CoverageRow = {
+  topic: string
+  cells: {
+    region: string
+    best: number
+    count: number
+    trainerNames?: string[]
+  }[]
+}
 
+type SkillCatalogGroup = SkillCatalogCategoryOut
+
+const meetingTypes: MeetingType[] = ['Intro call', 'Executive pitch', 'Workshop', 'Deep dive']
+const regions: Region[] = ['EMEA', 'NA', 'UK', 'HK', 'MY', 'SG', 'AUS']
+const industries = ['Banking', 'Retail', 'Public sector', 'Manufacturing', 'Technology', 'Healthcare']
+const defaultSkillCatalog: SkillCatalogGroup[] = [
+  {
+    category: 'Software Engineering',
+    skills: [
+      '.Net',
+      'C#',
+      'Java',
+      'JPA/Hibernate',
+      'Mockito',
+      'OOD',
+      'Spring Framework',
+      'Spring Security',
+      'UML',
+      'Mainframe Dev',
+      'Microservices',
+      'Full Stack Web Development - Java',
+    ],
+  },
+  {
+    category: 'AI/ML',
+    skills: [
+      'Spec Driven Development (SDD)',
+      'Prompt Engineering Framework',
+      'RAG',
+      'LLM Models',
+      'LangChain, Spring AI, LangChain4j, Semantic Kernel',
+      'SonarSource',
+      'Validation/Guardrails - Pydantic',
+      'LangGraph/Workflow Framework',
+      'Retrieval Layer - ChromaDB/Any Vector DB',
+      'AI Governance',
+      'Automation',
+    ],
+  },
+  {
+    category: 'Business Management',
+    skills: [
+      'Business Analysis',
+      'Change Management',
+      'Financial Industry Awareness',
+      'Governance',
+      'Leadership Coaching & Change',
+      'MS Dynamics',
+      'Product Management',
+      'Professional Skills',
+      'Risk Management',
+      'Stakeholder Engagement',
+    ],
+  },
+  {
+    category: 'Cloud',
+    skills: ['Cloud Computing', 'Cloud Migration', 'GCP/AWS/Microsoft Azure', 'VMWare', 'Cloud Modernisation'],
+  },
+  {
+    category: 'IT Operations',
+    skills: ['OS Admin', 'Unix', 'Linux', 'ITIL'],
+  },
+  {
+    category: 'DevOps',
+    skills: ['CI/CD', 'Jenkins', 'Docker/Kubernetes', 'Git/Github/Gitlab', 'SonarSource', 'Gradle', 'Linux', 'Power Automate', 'Terraform'],
+  },
+  {
+    category: 'Project Management',
+    skills: ['Agile Scrum', 'Confluence', 'Jira', 'Release Management', 'Scrum Master'],
+  },
+  {
+    category: 'Data Analytics/Engineering',
+    skills: [
+      'Python',
+      'Data Visualization With Tableau',
+      'Data Visualization With Power BI',
+      'Databricks',
+      'Hadoop Environment (HDFS, Hive, MapReduce)',
+      'Apache Spark, PySpark',
+      'Kafka',
+      'Data Analytics',
+      'Data Engineering',
+      'Data Science',
+    ],
+  },
+  {
+    category: 'Database Management',
+    skills: ['SQL', 'PL-SQL', 'MongoDB', 'JSON'],
+  },
+  {
+    category: 'Web Application',
+    skills: ['Angular', 'Bootstrap', 'HTML/CSS', 'JQuery', 'Next.js', 'PowerApps', 'React', 'ReactJS', 'REST API'],
+  },
+  {
+    category: 'Testing',
+    skills: ['API Testing', 'Appium/Mobile Testing', 'Database/JDBC Testing', 'Playwright', 'Postman', 'Selenium/Cucumber', 'Specflow', 'TDD/JMeter', 'TestNG', 'Cybersecurity'],
+  },
+  {
+    category: 'Other Programming Languages',
+    skills: ['C/C++', 'COBOL', 'Javascript', 'NodeJS', 'Ruby on Rails', 'Scala', 'Typescript'],
+  },
+  {
+    category: 'Soft Skills',
+    skills: ['Communication', 'Interpersonal Skills', 'Problem Solving', 'Strategic Thinking', 'Time Management', 'Consultancy'],
+  },
+]
+const topics = defaultSkillCatalog.flatMap((group) => group.skills)
+const skillCategoryOrder = [
+  ...defaultSkillCatalog.map((group) => group.category),
+  'Additional Skills',
+  'Custom',
+]
+const defaultTopicCategories: Record<string, string> = Object.fromEntries(
+  defaultSkillCatalog.flatMap((group) => group.skills.map((skill) => [skill, group.category])),
+)
 const defaultWeights: Weights = {
   skill: 35,
   comfort: 20,
@@ -97,16 +231,21 @@ const defaultWeights: Weights = {
 
 const initialRequest: RequestState = {
   text: 'Need someone for a retail AI introduction meeting in Germany next week',
-  topic: 'AI governance',
+  topic: 'AI Governance',
+  otherTopic: '',
   region: 'EMEA',
+  otherRegion: '',
   meetingType: 'Intro call',
+  otherMeetingType: '',
   industry: 'Retail',
+  otherIndustry: '',
   language: 'English',
+  otherLanguage: '',
   seniority: 'Any',
   stretchMode: false,
 }
 
-const trainers: Trainer[] = [
+const demoTrainers: Trainer[] = [
   {
     id: 't-001',
     name: 'Anika Meier',
@@ -117,9 +256,9 @@ const trainers: Trainer[] = [
     languages: ['English', 'German'],
     summary: 'AI governance and responsible adoption lead with recent retail executive advisory work.',
     skills: [
-      { name: 'AI governance', category: 'AI', level: 5, evidence: 'Led retail AI risk workshops' },
-      { name: 'Change management', category: 'Adoption', level: 4, evidence: 'Delivered enablement playbooks' },
-      { name: 'Data analytics', category: 'Data', level: 3, evidence: 'Built analytics training modules' },
+      { name: 'AI Governance', category: 'AI/ML', level: 5, evidence: 'Led retail AI risk workshops' },
+      { name: 'Change Management', category: 'Business Management', level: 4, evidence: 'Delivered enablement playbooks' },
+      { name: 'Data Analytics', category: 'Data Analytics/Engineering', level: 3, evidence: 'Built analytics training modules' },
     ],
     industries: ['Retail', 'Manufacturing', 'Technology'],
     projects: [
@@ -128,7 +267,7 @@ const trainers: Trainer[] = [
         sector: 'Retail',
         status: 'Closing',
         commitment: 'Medium',
-        tags: ['AI governance', 'Executive pitch'],
+        tags: ['AI Governance', 'Executive pitch'],
       },
     ],
     bandwidth: 'Medium',
@@ -149,25 +288,25 @@ const trainers: Trainer[] = [
   {
     id: 't-002',
     name: 'Ravi Nair',
-    region: 'APAC',
+    region: 'SG',
     country: 'Singapore',
     role: 'Senior Cloud Trainer',
     seniority: 'Senior',
     languages: ['English', 'Tamil'],
     summary: 'Cloud modernisation trainer who wants more client exposure and has strong workshop delivery evidence.',
     skills: [
-      { name: 'Cloud modernisation', category: 'Cloud', level: 5, evidence: 'Migrated enterprise lab curriculum' },
-      { name: 'Automation', category: 'Engineering', level: 4, evidence: 'Built platform automation modules' },
-      { name: 'Cybersecurity', category: 'Security', level: 3, evidence: 'Cloud security foundations certified' },
+      { name: 'Cloud Modernisation', category: 'Cloud', level: 5, evidence: 'Migrated enterprise lab curriculum' },
+      { name: 'Automation', category: 'AI/ML', level: 4, evidence: 'Built platform automation modules' },
+      { name: 'Cybersecurity', category: 'Testing', level: 3, evidence: 'Cloud security foundations certified' },
     ],
     industries: ['Technology', 'Banking', 'Public sector'],
     projects: [
       {
-        name: 'APAC cloud academy',
+        name: 'SG cloud academy',
         sector: 'Technology',
         status: 'Active',
         commitment: 'Medium',
-        tags: ['Cloud modernisation', 'Workshop'],
+        tags: ['Cloud Modernisation', 'Workshop'],
       },
     ],
     bandwidth: 'Medium',
@@ -188,16 +327,16 @@ const trainers: Trainer[] = [
   {
     id: 't-003',
     name: 'Maya Carter',
-    region: 'Americas',
+    region: 'NA',
     country: 'United States',
     role: 'Cybersecurity Enablement Lead',
     seniority: 'Lead',
     languages: ['English', 'Spanish'],
     summary: 'Cybersecurity specialist with banking and healthcare experience, strongest in executive briefings.',
     skills: [
-      { name: 'Cybersecurity', category: 'Security', level: 5, evidence: 'CISO simulation program owner' },
-      { name: 'AI governance', category: 'AI', level: 3, evidence: 'AI risk controls module' },
-      { name: 'Data analytics', category: 'Data', level: 3, evidence: 'Threat analytics course' },
+      { name: 'Cybersecurity', category: 'Testing', level: 5, evidence: 'CISO simulation program owner' },
+      { name: 'AI Governance', category: 'AI/ML', level: 3, evidence: 'AI risk controls module' },
+      { name: 'Data Analytics', category: 'Data Analytics/Engineering', level: 3, evidence: 'Threat analytics course' },
     ],
     industries: ['Banking', 'Healthcare', 'Technology'],
     projects: [
@@ -227,16 +366,16 @@ const trainers: Trainer[] = [
   {
     id: 't-004',
     name: 'Sophie van Dijk',
-    region: 'Benelux',
+    region: 'EMEA',
     country: 'Netherlands',
     role: 'Data and AI Trainer',
     seniority: 'Senior',
     languages: ['English', 'Dutch', 'German'],
     summary: 'Data analytics and AI trainer with high appetite for more client-facing work.',
     skills: [
-      { name: 'Data analytics', category: 'Data', level: 5, evidence: 'Analytics academy lead' },
-      { name: 'AI governance', category: 'AI', level: 4, evidence: 'Responsible AI client labs' },
-      { name: 'Automation', category: 'Engineering', level: 3, evidence: 'Workflow automation labs' },
+      { name: 'Data Analytics', category: 'Data Analytics/Engineering', level: 5, evidence: 'Analytics academy lead' },
+      { name: 'AI Governance', category: 'AI/ML', level: 4, evidence: 'Responsible AI client labs' },
+      { name: 'Automation', category: 'AI/ML', level: 3, evidence: 'Workflow automation labs' },
     ],
     industries: ['Retail', 'Public sector', 'Banking'],
     projects: [
@@ -245,7 +384,7 @@ const trainers: Trainer[] = [
         sector: 'Public sector',
         status: 'Active',
         commitment: 'High',
-        tags: ['Data analytics', 'AI governance'],
+        tags: ['Data Analytics', 'AI Governance'],
       },
     ],
     bandwidth: 'High',
@@ -273,9 +412,9 @@ const trainers: Trainer[] = [
     languages: ['English', 'Arabic', 'French'],
     summary: 'Change and transformation trainer with broad regional coverage and strong client facilitation.',
     skills: [
-      { name: 'Change management', category: 'Adoption', level: 5, evidence: 'Regional transformation toolkit owner' },
-      { name: 'Cloud modernisation', category: 'Cloud', level: 3, evidence: 'Cloud adoption workshops' },
-      { name: 'Automation', category: 'Engineering', level: 4, evidence: 'Process automation bootcamps' },
+      { name: 'Change Management', category: 'Business Management', level: 5, evidence: 'Regional transformation toolkit owner' },
+      { name: 'Cloud Modernisation', category: 'Cloud', level: 3, evidence: 'Cloud adoption workshops' },
+      { name: 'Automation', category: 'AI/ML', level: 4, evidence: 'Process automation bootcamps' },
     ],
     industries: ['Public sector', 'Manufacturing', 'Technology'],
     projects: [
@@ -284,7 +423,7 @@ const trainers: Trainer[] = [
         sector: 'Public sector',
         status: 'Closing',
         commitment: 'Low',
-        tags: ['Change management', 'Workshop'],
+        tags: ['Change Management', 'Workshop'],
       },
     ],
     bandwidth: 'Low',
@@ -312,9 +451,9 @@ const trainers: Trainer[] = [
     languages: ['English', 'Italian', 'Spanish'],
     summary: 'Deep AI and automation specialist, excellent technical depth but limited appetite for early-stage sales calls.',
     skills: [
-      { name: 'AI governance', category: 'AI', level: 4, evidence: 'AI controls reference architecture' },
-      { name: 'Automation', category: 'Engineering', level: 5, evidence: 'Enterprise automation academy' },
-      { name: 'Cloud modernisation', category: 'Cloud', level: 4, evidence: 'AI platform migration labs' },
+      { name: 'AI Governance', category: 'AI/ML', level: 4, evidence: 'AI controls reference architecture' },
+      { name: 'Automation', category: 'AI/ML', level: 5, evidence: 'Enterprise automation academy' },
+      { name: 'Cloud Modernisation', category: 'Cloud', level: 4, evidence: 'AI platform migration labs' },
     ],
     industries: ['Technology', 'Manufacturing', 'Retail'],
     projects: [
@@ -356,6 +495,54 @@ function normalize(text: string) {
   return text.trim().toLowerCase()
 }
 
+function displayCaseSkill(text: string): string {
+  const special: Record<string, string> = {
+    ai: 'AI',
+    api: 'API',
+    aws: 'AWS',
+    ci: 'CI',
+    cobol: 'COBOL',
+    css: 'CSS',
+    db: 'DB',
+    gcp: 'GCP',
+    hdfs: 'HDFS',
+    html: 'HTML',
+    itil: 'ITIL',
+    jdbc: 'JDBC',
+    jquery: 'JQuery',
+    json: 'JSON',
+    llm: 'LLM',
+    mongodb: 'MongoDB',
+    ms: 'MS',
+    nextjs: 'NextJS',
+    ood: 'OOD',
+    pl: 'PL',
+    powerapps: 'PowerApps',
+    pyspark: 'PySpark',
+    rag: 'RAG',
+    reactjs: 'ReactJS',
+    rest: 'REST',
+    sdd: 'SDD',
+    sql: 'SQL',
+    tdd: 'TDD',
+    uml: 'UML',
+    vmware: 'VMWare',
+  }
+
+  return text
+    .trim()
+    .replaceAll('_', ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (word.includes('/')) return word.split('/').map(displayCaseSkill).join('/')
+      if (word.includes('-')) return word.split('-').map(displayCaseSkill).join('-')
+      const lower = word.toLowerCase()
+      return special[lower] || `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`
+    })
+    .join(' ')
+}
+
 function parseRequestText(text: string, current: RequestState): RequestState {
   const next = { ...current, text }
   const haystack = normalize(text)
@@ -370,8 +557,12 @@ function parseRequestText(text: string, current: RequestState): RequestState {
   if (matchedIndustry) next.industry = matchedIndustry
   if (matchedRegion) next.region = matchedRegion
   if (haystack.includes('germany') || haystack.includes('italy') || haystack.includes('france')) next.region = 'EMEA'
-  if (haystack.includes('singapore') || haystack.includes('apac')) next.region = 'APAC'
-  if (haystack.includes('netherlands') || haystack.includes('benelux')) next.region = 'Benelux'
+  if (haystack.includes('united states') || haystack.includes('canada') || haystack.includes('north america')) next.region = 'NA'
+  if (haystack.includes('united kingdom') || haystack.includes('london')) next.region = 'UK'
+  if (haystack.includes('hong kong')) next.region = 'HK'
+  if (haystack.includes('malaysia') || haystack.includes('kuala lumpur')) next.region = 'MY'
+  if (haystack.includes('singapore')) next.region = 'SG'
+  if (haystack.includes('australia') || haystack.includes('sydney') || haystack.includes('melbourne')) next.region = 'AUS'
   if (haystack.includes('intro') || haystack.includes('discovery')) next.meetingType = 'Intro call'
   if (haystack.includes('pitch') || haystack.includes('executive')) next.meetingType = 'Executive pitch'
   if (haystack.includes('workshop')) next.meetingType = 'Workshop'
@@ -381,6 +572,24 @@ function parseRequestText(text: string, current: RequestState): RequestState {
   }
 
   return next
+}
+
+function resolveRequest(request: RequestState): RequestState {
+  return {
+    ...request,
+    topic: request.topic === 'Other' ? request.otherTopic.trim() : request.topic,
+    region: request.region === 'Other' ? (request.otherRegion.trim() as RequestState['region']) : request.region,
+    meetingType:
+      request.meetingType === 'Other'
+        ? (request.otherMeetingType.trim() as RequestState['meetingType'])
+        : request.meetingType,
+    industry: request.industry === 'Other' ? request.otherIndustry.trim() : request.industry,
+    language: request.language === 'Other' ? request.otherLanguage.trim() : request.language,
+  }
+}
+
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 }
 
 function calculateMatches(request: RequestState, weights: Weights, source: Trainer[]): MatchResult[] {
@@ -400,8 +609,10 @@ function calculateMatches(request: RequestState, weights: Weights, source: Train
       })
       const skill = matchedSkill || fuzzySkill
       const skillScore = skill ? skill.level * 20 : 10
-      const comfortScore = request.meetingType === 'Any' ? 70 : trainer.comfort[request.meetingType] * 20
-      const industryScore = request.industry
+      const knownMeetingType = meetingTypes.includes(request.meetingType as MeetingType)
+      const comfortScore = request.meetingType === 'Any' ? 70 : knownMeetingType ? trainer.comfort[request.meetingType as MeetingType] * 20 : 50
+      const hasIndustryFilter = Boolean(request.industry && request.industry !== 'Any')
+      const industryScore = hasIndustryFilter
         ? trainer.industries.some((industry) => normalize(industry) === normalize(request.industry))
           ? 100
           : trainer.projects.some((project) => normalize(project.sector) === normalize(request.industry))
@@ -434,15 +645,17 @@ function calculateMatches(request: RequestState, weights: Weights, source: Train
         skill ? `${skill.name} depth rated ${skill.level}/5` : 'Partial topic match only',
         request.meetingType === 'Any'
           ? 'Broad meeting-type profile available'
-          : `${request.meetingType} comfort rated ${trainer.comfort[request.meetingType]}/5`,
-        request.industry && industryScore > 80 ? `${request.industry} evidence present` : `${trainer.region} coverage with ${trainer.travel.toLowerCase()} travel`,
+          : knownMeetingType
+            ? `${request.meetingType} comfort rated ${trainer.comfort[request.meetingType as MeetingType]}/5`
+            : `${request.meetingType} treated as custom meeting type`,
+        hasIndustryFilter && industryScore > 80 ? `${request.industry} evidence present` : `${trainer.region} coverage with ${trainer.travel.toLowerCase()} travel`,
       ]
 
       const caveats = [
         trainer.bandwidth === 'High' ? 'High current project load' : '',
         trainer.validation === 'Self-declared' ? 'Readiness needs validation' : '',
         trainer.updatedDaysAgo > 60 ? 'Profile is stale' : '',
-        request.meetingType !== 'Any' && trainer.comfort[request.meetingType] <= 2 ? 'Should not lead this meeting type alone' : '',
+        knownMeetingType && trainer.comfort[request.meetingType as MeetingType] <= 2 ? 'Should not lead this meeting type alone' : '',
       ].filter(Boolean)
 
       return { trainer, score, reasons, caveats, parts }
@@ -537,19 +750,20 @@ function trainersFromRows(rows: string[][]): Trainer[] {
     const parsedSkills = skillCells.length
       ? skillCells.map((item) => {
           const [name, rating] = item.split(':')
+          const skillName = displayCaseSkill(name)
           return {
-            name: name.trim(),
-            category: 'Imported',
+            name: skillName,
+            category: defaultTopicCategories[skillName] || 'Additional Skills',
             level: Math.max(1, Math.min(5, Number(rating) || 3)),
             evidence: 'Imported from trainer spreadsheet',
           }
         })
-      : [{ name: value('topic') || 'General training', category: 'Imported', level: 3, evidence: 'Imported row' }]
+      : [{ name: displayCaseSkill(value('topic') || 'General training'), category: 'Additional Skills', level: 3, evidence: 'Imported row' }]
 
     return {
       id: `csv-${index}`,
       name: value('name') || value('full_name') || `Imported trainer ${index + 1}`,
-      region: (value('region') as Region) || 'APAC',
+      region: asRegion(value('region')),
       country: value('country') || 'Unspecified',
       role: value('role') || value('role_title') || 'Trainer',
       seniority: value('seniority') || value('seniority_level') || 'Senior',
@@ -602,27 +816,209 @@ async function trainersFromSpreadsheet(file: File): Promise<Trainer[]> {
   return trainersFromRows(rows.map((row) => row.map((cell) => String(cell ?? '').trim())))
 }
 
+const emptyTrainer: Trainer = {
+  id: 'empty',
+  name: 'No trainer selected',
+  region: 'SG',
+  country: 'Import data to begin',
+  role: 'Trainer',
+  seniority: 'Unspecified',
+  languages: ['English'],
+  summary: 'Upload a trainer spreadsheet or start the backend with persisted data to see profile detail.',
+  skills: [],
+  industries: [],
+  projects: [],
+  bandwidth: 'Medium',
+  comfort: { 'Intro call': 3, 'Executive pitch': 3, Workshop: 3, 'Deep dive': 3 },
+  comfortNotes: {
+    'Intro call': 'No backend profile loaded yet.',
+    'Executive pitch': 'No backend profile loaded yet.',
+    Workshop: 'No backend profile loaded yet.',
+    'Deep dive': 'No backend profile loaded yet.',
+  },
+  desire: 'Neutral',
+  travel: 'Regional',
+  stretch: false,
+  validation: 'Self-declared',
+  managerNote: 'No manager note available.',
+  updatedDaysAgo: 0,
+}
+
+function asRegion(value: string): Region {
+  return regions.includes(value as Region) ? (value as Region) : 'SG'
+}
+
+function asBandwidth(value: string): Bandwidth {
+  return ['Low', 'Medium', 'High'].includes(value) ? (value as Bandwidth) : 'Medium'
+}
+
+function asDesire(value: string | undefined): Desire {
+  const desire = value || 'Neutral'
+  return ['Actively seeking', 'Open selectively', 'Neutral', 'Limited interest'].includes(desire) ? (desire as Desire) : 'Neutral'
+}
+
+function asValidation(value: string): ValidationStatus {
+  return ['Self-declared', 'Manager-validated', 'Community-validated'].includes(value) ? (value as ValidationStatus) : 'Self-declared'
+}
+
+function asTravel(value: string | undefined): Trainer['travel'] {
+  const travel = value || 'Regional'
+  return ['Local only', 'Regional', 'Global'].includes(travel) ? (travel as Trainer['travel']) : 'Regional'
+}
+
+function splitList(value: string | null | undefined) {
+  return (value || '')
+    .split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function daysAgo(value: string) {
+  const parsed = new Date(value).getTime()
+  if (Number.isNaN(parsed)) return 0
+  return Math.max(0, Math.round((Date.now() - parsed) / 86_400_000))
+}
+
+function trainerFromApi(detail: TrainerDetailOut): Trainer {
+  const comfort = { ...emptyTrainer.comfort }
+  const comfortNotes = { ...emptyTrainer.comfortNotes }
+  detail.comfort.forEach((item) => {
+    if (meetingTypes.includes(item.meeting_type as MeetingType)) {
+      comfort[item.meeting_type as MeetingType] = item.comfort_level
+      comfortNotes[item.meeting_type as MeetingType] = item.confidence_note || 'Imported profile needs comfort detail.'
+    }
+  })
+
+  const preferredSectors = splitList(detail.preference?.preferred_sectors)
+  const projectSectors = detail.projects.map((project) => project.client_sector || '').filter(Boolean)
+  const industriesForProfile = Array.from(new Set([...preferredSectors, ...projectSectors]))
+
+  return {
+    id: String(detail.id),
+    name: detail.full_name,
+    region: asRegion(detail.region),
+    country: detail.country || 'Unspecified',
+    role: detail.role_title || 'Trainer',
+    seniority: detail.seniority_level || 'Senior',
+    languages: splitList(detail.languages).length ? splitList(detail.languages) : ['English'],
+    summary: detail.profile_summary || 'Imported backend profile.',
+    skills: detail.skills.map((skill) => ({
+      name: skill.skill_name,
+      category: skill.skill_category || 'Imported',
+      level: skill.proficiency_level,
+      evidence: skill.evidence_note || skill.evidence_type || 'Backend profile evidence',
+    })),
+    industries: industriesForProfile,
+    projects: detail.projects.map((project) => ({
+      name: project.project_name,
+      sector: project.client_sector || 'Unspecified',
+      status: ['Active', 'Closing', 'Recent', 'Pipeline'].includes(project.project_status)
+        ? (project.project_status as Project['status'])
+        : 'Recent',
+      commitment: asBandwidth(project.time_commitment),
+      tags: splitList(project.relevance_tags),
+    })),
+    bandwidth: asBandwidth(detail.bandwidth),
+    comfort,
+    comfortNotes,
+    desire: asDesire(detail.preference?.client_facing_desire),
+    travel: asTravel(detail.preference?.travel_preference),
+    stretch: Boolean(detail.preference?.stretch_interest),
+    validation: asValidation(detail.validation_status),
+    managerNote: detail.manager_note || 'No manager note provided.',
+    updatedDaysAgo: daysAgo(detail.last_updated_at),
+  }
+}
+
+async function fetchTrainerDataset() {
+  const trainersList = await listTrainers()
+  return Promise.all(trainersList.map((trainer) => getTrainer(trainer.id).then(trainerFromApi)))
+}
+
+function coverageFromApi(payload: CoverageOut): CoverageRow[] {
+  return payload.rows.map((row) => ({
+    topic: row.topic,
+    cells: row.cells.map((cell) => ({
+      region: cell.region,
+      best: cell.best,
+      count: cell.count,
+      trainerNames: cell.trainer_names,
+    })),
+  }))
+}
+
+function trainerNamesForCoverageCell(source: Trainer[], topic: string, region: string) {
+  return source
+    .filter((trainer) => trainer.region === region && trainer.skills.some((skill) => normalize(skill.name) === normalize(topic)))
+    .map((trainer) => trainer.name)
+    .sort((left, right) => left.localeCompare(right))
+}
+
+function matchesFromApi(payload: MatchResponseOut, source: Trainer[]): MatchResult[] {
+  return payload.results.map((result) => {
+    const trainer = source.find((item) => item.id === String(result.trainer_id)) || {
+      ...emptyTrainer,
+      id: String(result.trainer_id),
+      name: result.full_name,
+      region: asRegion(result.region),
+      role: result.role_title || 'Trainer',
+    }
+
+    return {
+      trainer,
+      score: result.score,
+      reasons: result.reasons,
+      caveats: result.caveats,
+      parts: {
+        skill: result.components.skill || 0,
+        comfort: result.components.comfort || 0,
+        industry: result.components.industry || 0,
+        availability: result.components.availability || 0,
+        region: result.components.region || 0,
+        desire: result.components.desire || 0,
+      },
+    }
+  })
+}
+
 function App() {
   const [request, setRequest] = useState<RequestState>(initialRequest)
   const [weights, setWeights] = useState<Weights>(defaultWeights)
-  const [data, setData] = useState<Trainer[]>(trainers)
-  const [selectedId, setSelectedId] = useState(trainers[0].id)
+  const [data, setData] = useState<Trainer[]>([])
+  const [selectedId, setSelectedId] = useState('')
   const [activeView, setActiveView] = useState<'matches' | 'coverage' | 'admin'>('matches')
-  const [importNotice, setImportNotice] = useState('Sample dataset loaded')
+  const [importNotice, setImportNotice] = useState('Connecting to backend')
+  const [importErrors, setImportErrors] = useState<string[]>([])
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+  const [apiMatches, setApiMatches] = useState<MatchResult[]>([])
+  const [apiCoverageRows, setApiCoverageRows] = useState<CoverageRow[]>([])
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalogGroup[]>(defaultSkillCatalog)
+  const [savingWeights, setSavingWeights] = useState(false)
+  const [customTopics, setCustomTopics] = useState<string[]>([])
+  const [customRegions, setCustomRegions] = useState<string[]>([])
+  const [customMeetingTypes, setCustomMeetingTypes] = useState<string[]>([])
+  const [customIndustries, setCustomIndustries] = useState<string[]>([])
+  const [customLanguages, setCustomLanguages] = useState<string[]>([])
+  const effectiveRequest = useMemo(() => resolveRequest(request), [request])
 
-  const matches = useMemo(() => calculateMatches(request, weights, data), [data, request, weights])
-  const selected = data.find((trainer) => trainer.id === selectedId) || matches[0]?.trainer || data[0]
+  const localMatches = useMemo(() => calculateMatches(effectiveRequest, weights, data), [data, effectiveRequest, weights])
+  const matches = apiStatus === 'online' ? apiMatches : localMatches
+  const selected = data.find((trainer) => trainer.id === selectedId) || matches[0]?.trainer || data[0] || emptyTrainer
   const shortlist = matches.slice(0, 4)
 
   const missingFields = [
-    request.topic ? '' : 'topic',
-    request.region === 'Any' ? 'region' : '',
-    request.meetingType === 'Any' ? 'meeting type' : '',
+    effectiveRequest.topic ? '' : 'topic',
+    effectiveRequest.region === 'Any' ? 'region' : '',
+    effectiveRequest.meetingType === 'Any' ? 'meeting type' : '',
   ].filter(Boolean)
 
-  const coverageRows = topics.map((topic) => {
+  const catalogTopics = useMemo(() => skillCatalog.flatMap((group) => group.skills), [skillCatalog])
+  const catalogTopicSet = useMemo(() => new Set(catalogTopics), [catalogTopics])
+
+  const localCoverageRows = catalogTopics.map((topic) => {
     const cells = regions.map((region) => {
       const regional = data.filter((trainer) => trainer.region === region)
+      const trainerNames = trainerNamesForCoverageCell(data, topic, region)
       const best = Math.max(
         0,
         ...regional.map((trainer) => {
@@ -630,19 +1026,257 @@ function App() {
           return skill ? skill.level : 0
         }),
       )
-      return { region, best, count: regional.filter((trainer) => trainer.skills.some((skill) => skill.name === topic)).length }
+      return { region, best, count: trainerNames.length, trainerNames }
     })
     return { topic, cells }
   })
+  const coverageRows = (apiStatus === 'online' ? apiCoverageRows : localCoverageRows).map((row) => ({
+    ...row,
+    cells: row.cells.map((cell) => {
+      const trainerNames = cell.trainerNames ?? trainerNamesForCoverageCell(data, row.topic, cell.region)
+      return { ...cell, count: trainerNames.length, trainerNames }
+    }),
+  }))
+  const topicOptionGroups = useMemo(() => {
+    const groups = new Map<string, string[]>()
+    const addTopic = (category: string, topic: string) => {
+      const displayTopic = displayCaseSkill(topic)
+      if (!displayTopic) return
+      groups.set(category, [...(groups.get(category) || []), displayTopic])
+    }
+
+    skillCatalog.forEach((group) => {
+      group.skills.forEach((skill) => addTopic(group.category, skill))
+    })
+    data.forEach((trainer) => {
+      trainer.skills.forEach((skill) => {
+        if (!catalogTopicSet.has(skill.name)) addTopic(skill.category || 'Additional Skills', skill.name)
+      })
+    })
+    customTopics.forEach((topic) => addTopic('Custom', topic))
+
+    return Array.from(groups.entries())
+      .map(([category, options]) => ({ category, options: uniqueSorted(options) }))
+      .sort((left, right) => {
+        const leftIndex = skillCategoryOrder.indexOf(left.category)
+        const rightIndex = skillCategoryOrder.indexOf(right.category)
+        return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex) || left.category.localeCompare(right.category)
+      })
+  }, [catalogTopicSet, customTopics, data, skillCatalog])
+  const topicOptions = useMemo(() => topicOptionGroups.flatMap((group) => group.options), [topicOptionGroups])
+  const regionOptions = useMemo(() => uniqueSorted([...regions, ...customRegions]), [customRegions])
+  const meetingTypeOptions = useMemo(() => uniqueSorted([...meetingTypes, ...customMeetingTypes]), [customMeetingTypes])
+  const industryOptions = useMemo(
+    () => uniqueSorted([...industries, ...data.flatMap((trainer) => trainer.industries), ...customIndustries]),
+    [customIndustries, data],
+  )
+  const languageOptions = useMemo(
+    () => uniqueSorted(['English', 'German', 'Dutch', 'Spanish', 'Arabic', ...data.flatMap((trainer) => trainer.languages), ...customLanguages]),
+    [customLanguages, data],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadBackend() {
+      try {
+        await getHealth()
+        const [backendTrainers, scoringConfig, coverage, catalog] = await Promise.all([
+          fetchTrainerDataset(),
+          getScoringConfig(),
+          getCoverage(),
+          getSkillCatalog(),
+        ])
+
+        if (cancelled) return
+        setApiStatus('online')
+        setSkillCatalog(catalog.length ? catalog : defaultSkillCatalog)
+        setData(backendTrainers)
+        setSelectedId(backendTrainers[0]?.id || '')
+        setWeights({
+          skill: scoringConfig.skill,
+          comfort: scoringConfig.comfort,
+          industry: scoringConfig.industry,
+          availability: scoringConfig.availability,
+          region: scoringConfig.region,
+          desire: scoringConfig.desire,
+        })
+        setApiCoverageRows(coverageFromApi(coverage))
+        setImportNotice(
+          backendTrainers.length
+            ? `${backendTrainers.length} backend trainer profiles loaded`
+            : 'Backend online. Import a trainer spreadsheet to begin.',
+        )
+        setImportErrors([])
+      } catch {
+        if (cancelled) return
+        setApiStatus('offline')
+        setSkillCatalog(defaultSkillCatalog)
+        setData(demoTrainers)
+        setSelectedId(demoTrainers[0].id)
+        setImportNotice('Backend offline. Demo dataset loaded in the browser.')
+        setImportErrors([])
+      }
+    }
+
+    loadBackend()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function refreshMatches() {
+      if (apiStatus !== 'online') return
+
+      try {
+        const response = await matchTrainers({
+          request: effectiveRequest.text,
+          topic: effectiveRequest.topic,
+          meeting_type: effectiveRequest.meetingType === 'Any' ? null : effectiveRequest.meetingType,
+          industry: effectiveRequest.industry === 'Any' ? null : effectiveRequest.industry || null,
+          region: effectiveRequest.region === 'Any' ? null : effectiveRequest.region,
+          language: effectiveRequest.language || null,
+          seniority: request.seniority === 'Any' ? null : request.seniority,
+          stretch_mode: effectiveRequest.stretchMode,
+          weights,
+        })
+        if (!cancelled) {
+          const nextMatches = matchesFromApi(response, data)
+          setApiMatches(nextMatches)
+          if (!selectedId && nextMatches[0]) setSelectedId(nextMatches[0].trainer.id)
+        }
+      } catch {
+        if (!cancelled) setImportNotice('Backend match failed. Check the API process and request data.')
+      }
+    }
+
+    refreshMatches()
+
+    return () => {
+      cancelled = true
+    }
+  }, [apiStatus, data, effectiveRequest, request.seniority, selectedId, weights])
+
+  async function saveWeights(nextWeights: Weights) {
+    setWeights(nextWeights)
+    if (apiStatus !== 'online') return
+
+    setSavingWeights(true)
+    try {
+      await updateScoringConfig(nextWeights)
+      setImportNotice('Backend scoring weights saved')
+    } catch {
+      setImportNotice('Could not save scoring weights to backend')
+    } finally {
+      setSavingWeights(false)
+    }
+  }
+
+  function commitOther(field: 'topic' | 'region' | 'meetingType' | 'industry' | 'language') {
+    const config = {
+      topic: {
+        value: request.otherTopic,
+        setValues: setCustomTopics,
+        patch: (value: string) => ({ topic: value, otherTopic: '' }),
+      },
+      region: {
+        value: request.otherRegion,
+        setValues: setCustomRegions,
+        patch: (value: string) => ({ region: value as RequestState['region'], otherRegion: '' }),
+      },
+      meetingType: {
+        value: request.otherMeetingType,
+        setValues: setCustomMeetingTypes,
+        patch: (value: string) => ({ meetingType: value as RequestState['meetingType'], otherMeetingType: '' }),
+      },
+      industry: {
+        value: request.otherIndustry,
+        setValues: setCustomIndustries,
+        patch: (value: string) => ({ industry: value, otherIndustry: '' }),
+      },
+      language: {
+        value: request.otherLanguage,
+        setValues: setCustomLanguages,
+        patch: (value: string) => ({ language: value, otherLanguage: '' }),
+      },
+    }[field]
+    const rawValue = config.value.trim()
+    const value = field === 'topic' || field === 'industry' ? displayCaseSkill(rawValue) : rawValue
+    if (!value) return
+    config.setValues((current) => uniqueSorted([...current, value]))
+    setRequest((current) => ({ ...current, ...config.patch(value) }))
+  }
+
+  function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>, field: 'topic' | 'region' | 'meetingType' | 'industry' | 'language') {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitOther(field)
+    }
+  }
+
+  async function handleRequirementUpload(file: File) {
+    setImportNotice('Comparing requirement document to backend trainers')
+    try {
+      const [response, backendTrainers] = await Promise.all([compareRequirement(file), fetchTrainerDataset()])
+      const inferred = response.inferred_request
+      const nextRequest: RequestState = {
+        text: response.extracted_text_preview,
+        topic: topicOptions.includes(inferred.topic) ? inferred.topic : 'Other',
+        otherTopic: topicOptions.includes(inferred.topic) ? '' : inferred.topic,
+        region: inferred.region && regionOptions.includes(inferred.region) ? (inferred.region as RequestState['region']) : inferred.region ? 'Other' : 'Any',
+        otherRegion: inferred.region && !regions.includes(inferred.region as Region) ? inferred.region : '',
+        meetingType: inferred.meeting_type && meetingTypeOptions.includes(inferred.meeting_type) ? (inferred.meeting_type as RequestState['meetingType']) : inferred.meeting_type ? 'Other' : 'Any',
+        otherMeetingType:
+          inferred.meeting_type && !meetingTypes.includes(inferred.meeting_type as MeetingType)
+            ? inferred.meeting_type
+            : '',
+        industry: inferred.industry && industryOptions.includes(inferred.industry) ? inferred.industry : inferred.industry ? 'Other' : request.industry,
+        otherIndustry: inferred.industry && !industryOptions.includes(inferred.industry) ? inferred.industry : '',
+        language: inferred.language && languageOptions.includes(inferred.language) ? inferred.language : inferred.language ? 'Other' : 'English',
+        otherLanguage: inferred.language && !languageOptions.includes(inferred.language) ? inferred.language : '',
+        seniority: inferred.seniority || 'Any',
+        stretchMode: inferred.stretch_mode,
+      }
+      setApiStatus('online')
+      setData(backendTrainers)
+      setRequest(nextRequest)
+      setApiMatches(matchesFromApi(response.match, backendTrainers))
+      setSelectedId(response.match.results[0] ? String(response.match.results[0].trainer_id) : '')
+      setImportNotice(`Compared ${file.name} using ${inferred.topic}${inferred.region ? ` in ${inferred.region}` : ''}`)
+      setImportErrors([])
+      setActiveView('matches')
+    } catch (error) {
+      setImportNotice('Requirement comparison failed')
+      setImportErrors([error instanceof Error ? error.message : 'Upload a readable .docx, .pdf, or .txt requirement document.'])
+    }
+  }
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Trainer expert match agent</p>
-          <h1>Find the right trainer for the meeting.</h1>
+          <p className="eyebrow">ATEM</p>
+          <h1>Agent for Trainer Expert Match</h1>
         </div>
         <div className="topbar-actions" aria-label="Data actions">
+          <label className="file-action secondary-file-action">
+            Upload requirement
+            <input
+              accept=".docx,.pdf,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (!file) return
+                handleRequirementUpload(file).finally(() => {
+                  event.target.value = ''
+                })
+              }}
+            />
+          </label>
           <label className="file-action">
             Import Excel/CSV
             <input
@@ -651,22 +1285,47 @@ function App() {
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 if (!file) return
-                const isCsv = file.name.toLowerCase().endsWith('.csv')
-                const reader = isCsv ? file.text().then(trainersFromCsv) : trainersFromSpreadsheet(file)
+                setImportNotice('Uploading trainer spreadsheet to backend')
 
-                reader.then((imported) => {
-                  if (imported.length) {
-                    setData(imported)
-                    setSelectedId(imported[0].id)
-                    setImportNotice(`${imported.length} imported trainer profiles loaded`)
-                  } else {
-                    setImportNotice('No trainer profiles found in the selected file')
-                  }
-                }).catch(() => {
-                  setImportNotice('Import failed. Check the first sheet has a header row.')
-                }).finally(() => {
-                  event.target.value = ''
-                })
+                importTrainers(file)
+                  .then(async (result) => {
+                    const [backendTrainers, coverage] = await Promise.all([fetchTrainerDataset(), getCoverage()])
+                    setApiStatus('online')
+                    setData(backendTrainers)
+                    setSelectedId(backendTrainers[0]?.id || '')
+                    setApiCoverageRows(coverageFromApi(coverage))
+                    const importedCount = result.created_count + result.updated_count
+                    const errorSuffix = result.error_count ? ` with ${result.error_count} row errors` : ''
+                    setImportNotice(`${importedCount} backend profiles imported${errorSuffix}`)
+                    setImportErrors(
+                      result.errors.map((error) => `Row ${error.row_number} ${error.field}: ${error.message}`),
+                    )
+                  })
+                  .catch(() => {
+                    const isCsv = file.name.toLowerCase().endsWith('.csv')
+                    const reader = isCsv ? file.text().then(trainersFromCsv) : trainersFromSpreadsheet(file)
+
+                    reader
+                      .then((imported) => {
+                        if (imported.length) {
+                          setApiStatus('offline')
+                          setData(imported)
+                          setSelectedId(imported[0].id)
+                          setImportNotice(`${imported.length} profiles loaded locally. Backend import failed.`)
+                          setImportErrors([])
+                        } else {
+                          setImportNotice('No trainer profiles found in the selected file')
+                          setImportErrors([])
+                        }
+                      })
+                      .catch(() => {
+                        setImportNotice('Import failed. Check the first sheet has a header row.')
+                        setImportErrors([])
+                      })
+                  })
+                  .finally(() => {
+                    event.target.value = ''
+                  })
               }}
             />
           </label>
@@ -686,9 +1345,9 @@ function App() {
           />
           <div className="prompt-row" aria-label="Prompt examples">
             {[
-              'Cloud workshop in APAC for banking',
-              'Executive cyber pitch for banking in Americas',
-              'Stretch candidate for data in Benelux',
+              'Cloud workshop in SG for banking',
+              'Executive cyber pitch for banking in NA',
+              'Stretch candidate for data in UK',
             ].map((prompt) => (
               <button
                 type="button"
@@ -704,13 +1363,22 @@ function App() {
 
         <div className="agent-card">
           <span className="status-dot" aria-hidden="true" />
-          <strong>{missingFields.length ? 'Clarify request' : 'Ready to rank'}</strong>
+          <strong>{apiStatus === 'checking' ? 'Connecting' : missingFields.length ? 'Clarify request' : 'Ready to rank'}</strong>
           <p>
-            {missingFields.length
+            {apiStatus === 'offline'
+              ? 'FastAPI is not reachable, so this session is using the browser demo dataset.'
+              : missingFields.length
               ? `Add ${missingFields.join(', ')} to improve the shortlist.`
               : `Ranking ${data.length} profiles using skill, comfort, industry, availability, region, and appetite.`}
           </p>
           <p className="notice">{importNotice}</p>
+          {importErrors.length > 0 && (
+            <ul className="import-errors" aria-label="Import row errors">
+              {importErrors.slice(0, 4).map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
@@ -718,19 +1386,45 @@ function App() {
         <label>
           Topic
           <select value={request.topic} onChange={(event) => setRequest({ ...request, topic: event.target.value })}>
-            {topics.map((topic) => (
-              <option key={topic}>{topic}</option>
+            {topicOptionGroups.map((group) => (
+              <optgroup label={group.category} key={group.category}>
+                {group.options.map((topic) => (
+                  <option key={topic}>{topic}</option>
+                ))}
+              </optgroup>
             ))}
+            <option>Other</option>
           </select>
+          {request.topic === 'Other' && (
+            <input
+              className="other-input"
+              placeholder="Enter topic"
+              value={request.otherTopic}
+              onChange={(event) => setRequest({ ...request, otherTopic: event.target.value })}
+              onBlur={() => commitOther('topic')}
+              onKeyDown={(event) => handleOtherKeyDown(event, 'topic')}
+            />
+          )}
         </label>
         <label>
           Region
           <select value={request.region} onChange={(event) => setRequest({ ...request, region: event.target.value as RequestState['region'] })}>
             <option>Any</option>
-            {regions.map((region) => (
+            {regionOptions.map((region) => (
               <option key={region}>{region}</option>
             ))}
+            <option>Other</option>
           </select>
+          {request.region === 'Other' && (
+            <input
+              className="other-input"
+              placeholder="Enter region/location"
+              value={request.otherRegion}
+              onChange={(event) => setRequest({ ...request, otherRegion: event.target.value })}
+              onBlur={() => commitOther('region')}
+              onKeyDown={(event) => handleOtherKeyDown(event, 'region')}
+            />
+          )}
         </label>
         <label>
           Meeting type
@@ -739,28 +1433,60 @@ function App() {
             onChange={(event) => setRequest({ ...request, meetingType: event.target.value as RequestState['meetingType'] })}
           >
             <option>Any</option>
-            {meetingTypes.map((type) => (
+            {meetingTypeOptions.map((type) => (
               <option key={type}>{type}</option>
             ))}
+            <option>Other</option>
           </select>
+          {request.meetingType === 'Other' && (
+            <input
+              className="other-input"
+              placeholder="Enter meeting type"
+              value={request.otherMeetingType}
+              onChange={(event) => setRequest({ ...request, otherMeetingType: event.target.value })}
+              onBlur={() => commitOther('meetingType')}
+              onKeyDown={(event) => handleOtherKeyDown(event, 'meetingType')}
+            />
+          )}
         </label>
         <label>
           Industry
           <select value={request.industry} onChange={(event) => setRequest({ ...request, industry: event.target.value })}>
-            {industries.map((industry) => (
+            <option>Any</option>
+            {industryOptions.map((industry) => (
               <option key={industry}>{industry}</option>
             ))}
+            <option>Other</option>
           </select>
+          {request.industry === 'Other' && (
+            <input
+              className="other-input"
+              placeholder="Enter industry"
+              value={request.otherIndustry}
+              onChange={(event) => setRequest({ ...request, otherIndustry: event.target.value })}
+              onBlur={() => commitOther('industry')}
+              onKeyDown={(event) => handleOtherKeyDown(event, 'industry')}
+            />
+          )}
         </label>
         <label>
           Language
           <select value={request.language} onChange={(event) => setRequest({ ...request, language: event.target.value })}>
-            <option>English</option>
-            <option>German</option>
-            <option>Dutch</option>
-            <option>Spanish</option>
-            <option>Arabic</option>
+            {languageOptions.map((language) => (
+              <option key={language}>{language}</option>
+            ))}
+            <option>Other</option>
           </select>
+          {request.language === 'Other' && (
+            <input
+              className="other-input"
+              placeholder="Enter language"
+              value={request.otherLanguage}
+              onChange={(event) => setRequest({ ...request, otherLanguage: event.target.value })}
+              onBlur={() => commitOther('language')}
+              onKeyDown={(event) => handleOtherKeyDown(event, 'language')}
+            />
+          )}
         </label>
         <label className="toggle">
           <input
@@ -848,10 +1574,10 @@ function App() {
             <div className="profile-section">
               <h3>Skills evidence</h3>
               {selected.skills.map((skill) => (
-                <div className="skill-row" key={skill.name}>
+                <div className="skill-row" key={`${skill.category}-${skill.name}`}>
                   <span>
                     <strong>{skill.name}</strong>
-                    <small>{skill.evidence}</small>
+                    <small>{skill.category} - {skill.evidence}</small>
                   </span>
                   <meter min="0" max="5" value={skill.level} />
                 </div>
@@ -913,12 +1639,33 @@ function App() {
               {coverageRows.map((row) => (
                 <div className="matrix-row" role="row" key={row.topic}>
                   <strong role="cell">{row.topic}</strong>
-                  {row.cells.map((cell) => (
-                    <span className={`heat heat-${cell.best}`} role="cell" key={cell.region}>
-                      {cell.best ? `${cell.best}/5` : 'Gap'}
-                      <small>{cell.count} profiles</small>
-                    </span>
-                  ))}
+                  {row.cells.map((cell) => {
+                    const trainerNames = cell.trainerNames || []
+                    const trainerSummary = trainerNames.length
+                      ? `Trainers: ${trainerNames.join(', ')}`
+                      : 'No trainer profiles'
+                    return (
+                      <span
+                        aria-label={`${row.topic}, ${cell.region}: ${cell.best ? `${cell.best} out of 5` : 'Gap'}, ${trainerSummary}`}
+                        className={`heat heat-${cell.best}`}
+                        key={cell.region}
+                        role="cell"
+                        tabIndex={trainerNames.length ? 0 : undefined}
+                        title={trainerSummary}
+                      >
+                        {cell.best ? `${cell.best}/5` : 'Gap'}
+                        <small>{cell.count} {cell.count === 1 ? 'profile' : 'profiles'}</small>
+                        {trainerNames.length > 0 && (
+                          <span className="heat-tooltip" role="tooltip">
+                            <strong>{trainerNames.length === 1 ? 'Trainer' : 'Trainers'}</strong>
+                            {trainerNames.map((name) => (
+                              <span key={name}>{name}</span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                    )
+                  })}
                 </div>
               ))}
             </div>
@@ -953,8 +1700,8 @@ function App() {
               <p className="eyebrow">Admin configuration</p>
               <h2>Matching weights</h2>
             </div>
-            <button type="button" className="secondary-button" onClick={() => setWeights(defaultWeights)}>
-              Reset
+            <button type="button" className="secondary-button" onClick={() => saveWeights(defaultWeights)}>
+              {savingWeights ? 'Saving' : 'Reset'}
             </button>
           </div>
           <div className="weight-grid">
@@ -969,7 +1716,7 @@ function App() {
                   min="0"
                   max="50"
                   value={weights[key]}
-                  onChange={(event) => setWeights({ ...weights, [key]: Number(event.target.value) })}
+                  onChange={(event) => saveWeights({ ...weights, [key]: Number(event.target.value) })}
                 />
               </label>
             ))}

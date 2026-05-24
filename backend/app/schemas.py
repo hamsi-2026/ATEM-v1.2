@@ -113,10 +113,23 @@ class MatchResponseOut(BaseModel):
     results: list[MatchResultOut]
 
 
+class RequirementCompareOut(BaseModel):
+    filename: str
+    extracted_text_preview: str
+    inferred_request: MatchRequestIn
+    match: MatchResponseOut
+
+
+class SkillCatalogCategoryOut(BaseModel):
+    category: str
+    skills: list[str]
+
+
 class CoverageCellOut(BaseModel):
     region: str
     best: int
     count: int
+    trainer_names: list[str] = Field(default_factory=list)
 
 
 class CoverageRowOut(BaseModel):

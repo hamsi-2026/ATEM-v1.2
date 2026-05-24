@@ -65,7 +65,19 @@ Deliverables:
 - Shared service calls.
 - Local MCP run instructions.
 
-## Phase 6: Verification
+## Phase 6: Deployment Readiness
+
+Document how ATEM can be hosted for internal use.
+
+Deliverables:
+
+- SharePoint frontend plus Azure backend option.
+- Azure Static Web Apps plus Azure backend option.
+- Copilot Studio/custom connector option.
+- Environment variable and CORS notes.
+- Production data-store guidance.
+
+## Phase 7: Verification
 
 Verify the app end-to-end with realistic data.
 
@@ -87,4 +99,9 @@ Deliverables:
 5. API endpoints.
 6. Frontend integration.
 7. MCP server.
-8. End-to-end verification.
+8. Deployment documentation.
+9. End-to-end verification.
+
+## Future Consideration: RAG
+
+RAG is not part of the current implementation plan. A future phase may add semantic retrieval if ATEM needs to reason over unstructured documents with citations.

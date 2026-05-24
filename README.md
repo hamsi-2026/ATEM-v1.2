@@ -5,19 +5,24 @@ Internal web application for finding best-fit trainers for client and internal m
 ## Current State
 
 - React app with trainer matching UI.
-- Excel/CSV import in the browser.
-- Dummy sample data in `src/App.tsx`.
-- No persistent backend yet.
+- FastAPI backend with SQLite persistence.
+- Backend Excel/CSV import for trainer profiles.
+- Backend matching, coverage analytics, and scoring configuration.
+- Requirement document upload uses text extraction and rule-based field inference.
+- The current implementation does not use RAG, embeddings, vector search, or LLM answer generation.
+- Browser demo data remains as an offline fallback.
 
-## Planned Backend
+## Backend
 
-The next implementation phase is specified in `specs/` and will use:
+The service layer uses:
 
 - Python
 - FastAPI
 - SQLite
 - SQLAlchemy
 - MCP tools for agent access
+
+The frontend expects the API at `http://127.0.0.1:8000` by default. Set `VITE_API_BASE_URL` to override it.
 
 ## Specs
 
@@ -28,6 +33,7 @@ The next implementation phase is specified in `specs/` and will use:
 - [Tasks](specs/tasks.md)
 - [Analyse](specs/analyse.md)
 - [Implement](specs/implement.md)
+- [Deployment Options](docs/deployment.md)
 
 ## Frontend Commands
 

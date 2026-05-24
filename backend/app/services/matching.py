@@ -68,7 +68,15 @@ def skill_score(trainer: models.Trainer, topic: str) -> tuple[float, str | None]
     best: models.Skill | None = None
     for skill in trainer.skills:
         skill_name = skill.skill_name.lower()
-        if topic_norm in skill_name or skill_name in topic_norm or (topic_first and topic_first in skill_name):
+        if topic_norm == skill_name or topic_norm in skill_name or skill_name in topic_norm:
+            if best is None or skill.proficiency_level > best.proficiency_level:
+                best = skill
+    if best is not None:
+        return float(best.proficiency_level * 20), best.skill_name
+
+    for skill in trainer.skills:
+        skill_name = skill.skill_name.lower()
+        if topic_first and topic_first in skill_name:
             if best is None or skill.proficiency_level > best.proficiency_level:
                 best = skill
     if best is None:

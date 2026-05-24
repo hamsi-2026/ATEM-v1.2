@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from backend.app import models
 from backend.app.database import get_session
-from backend.app.schemas import ScoringConfigIn, ScoringConfigOut
+from backend.app.schemas import ScoringConfigIn, ScoringConfigOut, SkillCatalogCategoryOut
 from backend.app.services.matching import get_default_config
+from backend.app.services.skill_catalog import skill_catalog_groups
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -26,3 +27,8 @@ def update_scoring_config(payload: ScoringConfigIn, session: Session = Depends(g
     session.commit()
     session.refresh(config)
     return config
+
+
+@router.get("/skill-catalog", response_model=list[SkillCatalogCategoryOut])
+def get_skill_catalog() -> list[dict[str, object]]:
+    return skill_catalog_groups()

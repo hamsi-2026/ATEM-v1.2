@@ -1,18 +1,27 @@
 from datetime import UTC, datetime
 
 
-REGIONS = {"APAC", "EMEA", "Americas", "Benelux"}
+REGION_ORDER = ("EMEA", "NA", "UK", "HK", "MY", "SG", "AUS")
+REGIONS = set(REGION_ORDER)
 MEETING_TYPES = ("Intro call", "Executive pitch", "Workshop", "Deep dive")
 
 HEADER_ALIASES = {
     "trainer_id": "external_id",
     "id": "external_id",
     "trainer_name": "full_name",
+    "coach_name": "full_name",
+    "coach_full_name": "full_name",
+    "trainer_coach_name": "full_name",
+    "employee_name": "full_name",
+    "staff_name": "full_name",
     "name": "full_name",
     "skill_set": "skills",
     "skillset": "skills",
     "skill": "skills",
     "business_region": "region",
+    "base_region": "region",
+    "home_region": "region",
+    "market": "region",
     "availability": "bandwidth",
     "current_availability": "bandwidth",
     "client_appetite": "client_facing_desire",

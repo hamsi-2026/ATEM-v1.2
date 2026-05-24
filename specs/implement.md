@@ -72,6 +72,27 @@ Expected outcome:
 - Match results come from `POST /match`.
 - Refreshing the browser does not lose imported data.
 
+### Step 8: Document Deployment Paths
+
+Document production-oriented hosting options.
+
+Expected outcome:
+
+- Deployment documentation explains why SharePoint can host/embed only the frontend.
+- Deployment documentation covers Azure-hosted backend requirements.
+- Deployment documentation covers Copilot Studio/custom connector access.
+- CORS and `VITE_API_BASE_URL` configuration are documented.
+
+### Step 9: Keep AI Scope Explicit
+
+Document that the current MVP is deterministic and not RAG-based.
+
+Expected outcome:
+
+- Requirement upload is described as text extraction plus rule-based field inference.
+- RAG, embeddings, vector search, and LLM-generated recommendations are marked as future options only.
+- Copilot usage is described as API/action based unless a future RAG phase is approved.
+
 ## Initial API Contracts
 
 ### `POST /imports/trainers`
@@ -193,6 +214,23 @@ uvicorn backend.app.main:app --reload
 pytest backend/tests
 ```
 
+## Deployment Notes
+
+See [Deployment Options](../docs/deployment.md).
+
+Current deployment assumption:
+
+- Frontend can be hosted as static files.
+- FastAPI backend must run on an application host such as Azure App Service or Azure Container Apps.
+- SharePoint can be an entry point for the frontend but cannot run Python backend services.
+- Copilot Studio can call ATEM through API actions/custom connectors.
+
+## AI/RAG Notes
+
+The current implementation does not use RAG. It does not include embeddings, semantic retrieval, vector storage, or LLM-generated answer synthesis.
+
+The uploaded requirement document flow extracts readable text, infers structured match fields, and calls deterministic matching.
+
 ## Done Definition
 
 The backend migration is complete when:
@@ -204,3 +242,4 @@ The backend migration is complete when:
 - MCP tools expose matching and profile lookup.
 - React no longer relies on the hardcoded dummy dataset for normal operation.
 - End-to-end import, match, profile, and coverage workflows pass verification.
+- Deployment options and current non-RAG architecture are documented.
