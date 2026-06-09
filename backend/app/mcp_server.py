@@ -4,9 +4,14 @@ This module is intentionally thin: tools should call the same service functions
 as FastAPI routes so agent behaviour cannot drift from application behaviour.
 """
 
+from __future__ import annotations
+
+import asyncio
+
 from backend.app.database import SessionLocal, init_db
 from backend.app.schemas import MatchRequestIn
 from backend.app.services.analytics import coverage_summary
+from backend.app.services.agentic import run_agent_query
 from backend.app.services.matching import run_match
 
 
@@ -50,4 +55,22 @@ if FastMCP is not None:
         init_db()
         with SessionLocal() as session:
             return coverage_summary(session).model_dump()
+
+    @mcp.tool()
+    def run_agentic_query(
+        query: str,
+        use_llm: bool = False,
+        include_coverage: bool = False,
+    ) -> dict:
+        init_db()
+        with SessionLocal() as session:
+            response = asyncio.run(
+                run_agent_query(
+                    session,
+                    query=query,
+                    use_llm=use_llm,
+                    include_coverage=include_coverage,
+                )
+            )
+            return response.model_dump()
 
