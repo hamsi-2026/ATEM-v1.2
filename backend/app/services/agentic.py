@@ -40,6 +40,11 @@ def llm_config() -> tuple[str | None, str, str]:
     return api_key, base_url, model
 
 
+def is_local_ollama(base_url: str) -> bool:
+    lowered = base_url.lower()
+    return "127.0.0.1:11434" in lowered or "localhost:11434" in lowered
+
+
 def parse_json_object(raw_text: str) -> dict[str, Any] | None:
     raw_text = raw_text.strip()
     if not raw_text:
@@ -84,8 +89,9 @@ def normalize_match_request(payload: dict[str, Any], fallback_topic: str) -> Mat
 
 async def llm_infer_request(query: str, fallback: MatchRequestIn) -> tuple[MatchRequestIn | None, str | None]:
     api_key, base_url, model = llm_config()
-    if not api_key:
-        return None, "LLM skipped: set ATEM_LLM_API_KEY (or OPENAI_API_KEY) to enable optional extraction."
+    using_ollama = is_local_ollama(base_url)
+    if not api_key and not using_ollama:
+        return None, "LLM skipped: set ATEM_LLM_API_KEY (or OPENAI_API_KEY), or use local Ollama base URL."
 
     instruction = (
         "Extract structured matching fields from the user request. Return JSON only with keys: "
@@ -93,25 +99,49 @@ async def llm_infer_request(query: str, fallback: MatchRequestIn) -> tuple[Match
         "If a value is unknown, return null. Do not include extra keys."
     )
 
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": query},
-        ],
-        "temperature": 0,
-    }
+    messages = [
+        {"role": "system", "content": instruction},
+        {"role": "user", "content": query},
+    ]
 
     try:
+        endpoint = f"{base_url}/chat/completions"
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        body: dict[str, Any]
+
+        if using_ollama:
+            endpoint = f"{base_url}/api/chat"
+            body = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": 0},
+            }
+        else:
+            headers["Authorization"] = f"Bearer {api_key}"
+            body = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0,
+            }
+
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=body,
-            )
+            response = await client.post(endpoint, headers=headers, json=body)
+
+            if using_ollama and response.status_code == 404:
+                prompt = f"{instruction}\n\nUser request:\n{query}\n"
+                response = await client.post(
+                    f"{base_url}/api/generate",
+                    headers=headers,
+                    json={"model": model, "prompt": prompt, "stream": False, "options": {"temperature": 0}},
+                )
+
         response.raise_for_status()
         payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
+        if using_ollama:
+            content = payload.get("message", {}).get("content") or payload.get("response", "")
+        else:
+            content = payload["choices"][0]["message"]["content"]
         parsed = parse_json_object(content)
         if not parsed:
             return None, "LLM returned a non-JSON response; deterministic inference was used."

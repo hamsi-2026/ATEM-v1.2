@@ -43,11 +43,31 @@ Optional environment variables for LLM extraction:
 
 ```bash
 ATEM_LLM_API_KEY=
-ATEM_LLM_BASE_URL=https://api.openai.com/v1
-ATEM_LLM_MODEL=gpt-4o-mini
+ATEM_LLM_BASE_URL=http://127.0.0.1:11434
+ATEM_LLM_MODEL=llama3.2:3b
 ```
 
 If no LLM key is set, the endpoint still works using deterministic inference only.
+
+### Local Ollama setup
+
+To use local Ollama instead of a hosted API:
+
+1. Ensure Ollama server is running on `http://127.0.0.1:11434`.
+2. Pull at least one local model, for example:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+3. Set:
+
+```bash
+ATEM_LLM_BASE_URL=http://127.0.0.1:11434
+ATEM_LLM_MODEL=llama3.2:3b
+```
+
+No API key is required for local Ollama.
 
 ## Version 2: SharePoint-Native SPFx
 
