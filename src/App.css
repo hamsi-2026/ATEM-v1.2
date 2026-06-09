@@ -1,7 +1,7 @@
 .app-shell {
   width: min(1440px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 24px 0 48px;
+  padding: 20px 0 48px;
 }
 
 .topbar,
@@ -15,18 +15,28 @@
 
 .topbar {
   display: flex;
-  align-items: end;
+  align-items: stretch;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px 0 8px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(9, 11, 12, 0.98), rgba(23, 29, 31, 0.94));
+  box-shadow: 0 20px 44px rgba(9, 11, 12, 0.3);
+}
+
+.topbar-intro {
+  display: grid;
+  align-content: center;
+  gap: 8px;
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: var(--accent);
-  font-size: 0.72rem;
+  color: var(--brand-lime);
+  font-size: 0.74rem;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -39,9 +49,10 @@ h3 {
 
 h1 {
   max-width: 760px;
-  color: var(--ink);
+  color: #ffffff;
+  font-family: 'Sora', 'Space Grotesk', sans-serif;
   font-size: 2.35rem;
-  line-height: 1.04;
+  line-height: 1.08;
 }
 
 h2 {
@@ -55,16 +66,26 @@ h3 {
   font-size: 0.95rem;
 }
 
+.brand-motto {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.92rem;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 button,
 .file-action {
   min-height: 38px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--ink);
   color: white;
   cursor: pointer;
   font: inherit;
   font-weight: 750;
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
 button {
@@ -86,6 +107,12 @@ input:focus-visible {
   color: var(--ink);
 }
 
+button:hover,
+.file-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(15, 18, 19, 0.16);
+}
+
 .ghost-button {
   min-height: 32px;
   border-color: rgba(30, 30, 30, 0.12);
@@ -98,6 +125,10 @@ input:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.topbar-actions {
+  align-content: start;
 }
 
 .file-action {
@@ -115,6 +146,25 @@ input:focus-visible {
   cursor: pointer;
 }
 
+.url-import-group {
+  display: grid;
+  grid-template-columns: 140px minmax(220px, 1fr) minmax(180px, 260px) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.auth-user {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.url-import-input {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
 .agent-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -129,7 +179,7 @@ input:focus-visible {
 .coverage-panel,
 .admin-panel {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
@@ -184,6 +234,7 @@ select {
   position: relative;
   padding: 18px;
   color: var(--ink);
+  background: linear-gradient(180deg, #ffffff, #f8fbf4);
 }
 
 .agent-card strong {
@@ -220,7 +271,7 @@ select {
   height: 10px;
   border-radius: 999px;
   background: var(--brand-lime);
-  box-shadow: 0 0 0 5px var(--brand-lime-soft);
+  box-shadow: 0 0 0 6px var(--brand-lime-soft);
 }
 
 .filter-bar {
@@ -230,8 +281,8 @@ select {
   align-items: end;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(247, 246, 245, 0.82);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .toggle {
@@ -254,7 +305,7 @@ select {
 .tabs {
   display: flex;
   gap: 6px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
 }
 
 .tab {
@@ -269,7 +320,7 @@ select {
 .tab.active {
   border-color: var(--line);
   border-bottom-color: var(--brand-lime);
-  background: var(--surface);
+  background: linear-gradient(180deg, #ffffff, #f4f8ef);
   color: var(--ink);
 }
 
@@ -328,7 +379,7 @@ select {
 }
 
 .result-card.selected {
-  border-color: rgba(30, 30, 30, 0.42);
+  border-color: rgba(15, 18, 19, 0.42);
   box-shadow: inset 4px 0 0 var(--brand-lime);
 }
 
@@ -517,7 +568,7 @@ meter {
 .manager-note {
   margin-top: 18px;
   padding: 12px;
-  background: #f7f6f5;
+  background: #f8faed;
 }
 
 .manager-note p,
@@ -555,7 +606,7 @@ meter {
 
 .matrix-row.header > * {
   min-height: 38px;
-  background: var(--ink);
+  background: #12171a;
   color: #fff;
   font-weight: 850;
 }
@@ -701,6 +752,11 @@ input[type='range'] {
   .topbar {
     align-items: stretch;
     flex-direction: column;
+    padding: 16px;
+  }
+
+  .url-import-group {
+    grid-template-columns: 1fr;
   }
 
   h1 {

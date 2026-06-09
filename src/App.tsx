@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { InteractionRequiredAuthError, PublicClientApplication, type AccountInfo } from '@azure/msal-browser'
 import * as XLSX from 'xlsx'
 import './App.css'
 import {
@@ -9,6 +10,7 @@ import {
   getSkillCatalog,
   getTrainer,
   importTrainers,
+  importTrainersFromUrl,
   listTrainers,
   matchTrainers,
   updateScoringConfig,
@@ -227,6 +229,20 @@ const defaultWeights: Weights = {
   availability: 10,
   region: 10,
   desire: 10,
+}
+
+const azureClientId = import.meta.env.VITE_AZURE_CLIENT_ID || ''
+const azureTenantId = import.meta.env.VITE_AZURE_TENANT_ID || 'common'
+
+function scopeFromSharePointUrl(url: string): string {
+  const hostname = new URL(url).hostname
+  return `https://${hostname}/AllSites.Read`
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  return 'Authentication failed'
 }
 
 const initialRequest: RequestState = {
@@ -999,6 +1015,27 @@ function App() {
   const [customMeetingTypes, setCustomMeetingTypes] = useState<string[]>([])
   const [customIndustries, setCustomIndustries] = useState<string[]>([])
   const [customLanguages, setCustomLanguages] = useState<string[]>([])
+  const [importUrl, setImportUrl] = useState('')
+  const [importBearerToken, setImportBearerToken] = useState('')
+  const [importSourceType, setImportSourceType] = useState<'auto' | 'file' | 'sharepoint_list'>('auto')
+  const [importingFromUrl, setImportingFromUrl] = useState(false)
+  const [microsoftAuthBusy, setMicrosoftAuthBusy] = useState(false)
+  const [microsoftUser, setMicrosoftUser] = useState('')
+
+  const msalClient = useMemo(() => {
+    if (!azureClientId) return null
+    return new PublicClientApplication({
+      auth: {
+        clientId: azureClientId,
+        authority: `https://login.microsoftonline.com/${azureTenantId}`,
+        redirectUri: window.location.origin,
+      },
+      cache: {
+        cacheLocation: 'sessionStorage',
+      },
+    })
+  }, [])
+
   const effectiveRequest = useMemo(() => resolveRequest(request), [request])
 
   const localMatches = useMemo(() => calculateMatches(effectiveRequest, weights, data), [data, effectiveRequest, weights])
@@ -1074,6 +1111,88 @@ function App() {
     () => uniqueSorted(['English', 'German', 'Dutch', 'Spanish', 'Arabic', ...data.flatMap((trainer) => trainer.languages), ...customLanguages]),
     [customLanguages, data],
   )
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function bootstrapMicrosoftAuth() {
+      if (!msalClient) return
+      try {
+        await msalClient.initialize()
+        const redirectResult = await msalClient.handleRedirectPromise()
+        const account = redirectResult?.account || msalClient.getActiveAccount() || msalClient.getAllAccounts()[0]
+        if (account) {
+          msalClient.setActiveAccount(account)
+          if (!cancelled) setMicrosoftUser(account.username || account.name || 'Microsoft account')
+        }
+      } catch {
+        if (!cancelled) {
+          setImportNotice('Microsoft sign-in is configured but could not initialize')
+        }
+      }
+    }
+
+    bootstrapMicrosoftAuth()
+
+    return () => {
+      cancelled = true
+    }
+  }, [msalClient])
+
+  async function getMicrosoftSharePointToken(url: string): Promise<string> {
+    if (!msalClient) {
+      throw new Error('Microsoft auth is not configured. Set VITE_AZURE_CLIENT_ID and VITE_AZURE_TENANT_ID.')
+    }
+
+    const scope = scopeFromSharePointUrl(url)
+    let account: AccountInfo | null = msalClient.getActiveAccount() || msalClient.getAllAccounts()[0] || null
+
+    if (!account) {
+      const login = await msalClient.loginPopup({ scopes: [scope] })
+      account = login.account
+    }
+
+    if (!account) {
+      throw new Error('Microsoft login did not return an account')
+    }
+
+    msalClient.setActiveAccount(account)
+
+    try {
+      const token = await msalClient.acquireTokenSilent({ account, scopes: [scope] })
+      setMicrosoftUser(account.username || account.name || 'Microsoft account')
+      return token.accessToken
+    } catch (error) {
+      if (error instanceof InteractionRequiredAuthError) {
+        const token = await msalClient.acquireTokenPopup({ account, scopes: [scope] })
+        setMicrosoftUser(account.username || account.name || 'Microsoft account')
+        return token.accessToken
+      }
+      throw error
+    }
+  }
+
+  async function connectMicrosoftToken() {
+    const url = importUrl.trim()
+    if (!url) {
+      setImportNotice('Paste the SharePoint URL first, then sign in to Microsoft')
+      return
+    }
+
+    setMicrosoftAuthBusy(true)
+    setImportNotice('Signing in to Microsoft and requesting SharePoint access token')
+    setImportErrors([])
+    try {
+      const token = await getMicrosoftSharePointToken(url)
+      setImportBearerToken(token)
+      setImportNotice('Microsoft token attached for SharePoint URL import')
+    } catch (error) {
+      setImportNotice('Microsoft sign-in failed')
+      setImportErrors([normalizeErrorMessage(error)])
+    } finally {
+      setMicrosoftAuthBusy(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1176,6 +1295,55 @@ function App() {
     }
   }
 
+  async function refreshAfterImport(result: { created_count: number; updated_count: number; error_count: number; errors: { row_number: number; field: string; message: string }[] }) {
+    const [backendTrainers, coverage] = await Promise.all([fetchTrainerDataset(), getCoverage()])
+    setApiStatus('online')
+    setData(backendTrainers)
+    setSelectedId(backendTrainers[0]?.id || '')
+    setApiCoverageRows(coverageFromApi(coverage))
+    const importedCount = result.created_count + result.updated_count
+    const errorSuffix = result.error_count ? ` with ${result.error_count} row errors` : ''
+    setImportNotice(`${importedCount} backend profiles imported${errorSuffix}`)
+    setImportErrors(result.errors.map((error) => `Row ${error.row_number} ${error.field}: ${error.message}`))
+  }
+
+  async function handleImportByUrl() {
+    const url = importUrl.trim()
+    if (!url) {
+      setImportNotice('Enter a SharePoint file/list URL first')
+      return
+    }
+
+    setImportingFromUrl(true)
+    setImportNotice('Fetching trainers from remote URL')
+    try {
+      let bearerToken = importBearerToken.trim()
+      if (!bearerToken && msalClient) {
+        try {
+          bearerToken = await getMicrosoftSharePointToken(url)
+          setImportBearerToken(bearerToken)
+        } catch (error) {
+          setImportNotice('Could not get Microsoft access token for this URL')
+          setImportErrors([normalizeErrorMessage(error)])
+          return
+        }
+      }
+
+      const result = await importTrainersFromUrl({
+        url,
+        source_type: importSourceType,
+        bearer_token: bearerToken || null,
+      })
+      await refreshAfterImport(result)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Import from URL failed'
+      setImportNotice('Import from URL failed')
+      setImportErrors([message])
+    } finally {
+      setImportingFromUrl(false)
+    }
+  }
+
   function commitOther(field: 'topic' | 'region' | 'meetingType' | 'industry' | 'language') {
     const config = {
       topic: {
@@ -1258,9 +1426,10 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="topbar-intro">
           <p className="eyebrow">ATEM</p>
-          <h1>Agent for Trainer Expert Match</h1>
+          <h1>Trainer Expert Match Platform</h1>
+          <p className="brand-motto">Powering the people behind tech and innovation</p>
         </div>
         <div className="topbar-actions" aria-label="Data actions">
           <label className="file-action secondary-file-action">
@@ -1289,17 +1458,7 @@ function App() {
 
                 importTrainers(file)
                   .then(async (result) => {
-                    const [backendTrainers, coverage] = await Promise.all([fetchTrainerDataset(), getCoverage()])
-                    setApiStatus('online')
-                    setData(backendTrainers)
-                    setSelectedId(backendTrainers[0]?.id || '')
-                    setApiCoverageRows(coverageFromApi(coverage))
-                    const importedCount = result.created_count + result.updated_count
-                    const errorSuffix = result.error_count ? ` with ${result.error_count} row errors` : ''
-                    setImportNotice(`${importedCount} backend profiles imported${errorSuffix}`)
-                    setImportErrors(
-                      result.errors.map((error) => `Row ${error.row_number} ${error.field}: ${error.message}`),
-                    )
+                    await refreshAfterImport(result)
                   })
                   .catch(() => {
                     const isCsv = file.name.toLowerCase().endsWith('.csv')
@@ -1329,6 +1488,46 @@ function App() {
               }}
             />
           </label>
+          <div className="url-import-group" aria-label="Import trainers from SharePoint URL">
+            <select
+              value={importSourceType}
+              onChange={(event) => setImportSourceType(event.target.value as 'auto' | 'file' | 'sharepoint_list')}
+            >
+              <option value="auto">Auto detect</option>
+              <option value="file">Excel/CSV URL</option>
+              <option value="sharepoint_list">SharePoint List URL</option>
+            </select>
+            <input
+              className="url-import-input"
+              placeholder="Paste SharePoint file/list URL"
+              value={importUrl}
+              onChange={(event) => setImportUrl(event.target.value)}
+            />
+            <input
+              className="url-import-input"
+              type="password"
+              placeholder="Bearer token (optional)"
+              value={importBearerToken}
+              onChange={(event) => setImportBearerToken(event.target.value)}
+            />
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={connectMicrosoftToken}
+              disabled={microsoftAuthBusy || !azureClientId}
+              title={
+                azureClientId
+                  ? 'Sign in and attach a SharePoint token automatically'
+                  : 'Set VITE_AZURE_CLIENT_ID to enable Microsoft sign-in'
+              }
+            >
+              {microsoftAuthBusy ? 'Signing in...' : 'Sign in Microsoft'}
+            </button>
+            <button type="button" className="secondary-button" onClick={handleImportByUrl} disabled={importingFromUrl}>
+              {importingFromUrl ? 'Importing...' : 'Import from URL'}
+            </button>
+            {microsoftUser && <span className="auth-user">Signed in: {microsoftUser}</span>}
+          </div>
           <button type="button" className="secondary-button" onClick={() => exportCsv(data)}>
             Export CSV
           </button>

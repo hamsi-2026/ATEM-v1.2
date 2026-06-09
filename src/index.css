@@ -1,25 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;550;650;750;850&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap');
 
 :root {
-  --ink: #1e1e1e;
-  --text: #303030;
-  --muted: #6c6c6b;
-  --bg: #efecea;
-  --surface: rgba(247, 246, 245, 0.96);
-  --soft: #f3ffd0;
-  --line: rgba(30, 30, 30, 0.16);
-  --accent: #1e1e1e;
-  --brand-lime: #c5ff00;
-  --brand-lime-soft: rgba(197, 255, 0, 0.26);
-  --brand-red: #ff4e48;
-  --brand-purple: #a44cff;
-  --shadow: 0 16px 46px rgba(30, 30, 30, 0.1);
+  --ink: #0f1213;
+  --text: #192022;
+  --muted: #4e5a5d;
+  --bg: #f4f7f6;
+  --surface: rgba(255, 255, 255, 0.96);
+  --soft: #edffc6;
+  --line: rgba(15, 18, 19, 0.16);
+  --accent: #0f1213;
+  --brand-lime: #c4f000;
+  --brand-lime-soft: rgba(196, 240, 0, 0.26);
+  --brand-red: #da3f35;
+  --brand-purple: #0f1213;
+  --shadow: 0 18px 44px rgba(15, 18, 19, 0.12);
 
-  font: 16px/1.5 Inter, Arial, sans-serif;
+  font: 16px/1.5 'Space Grotesk', 'Segoe UI', sans-serif;
   color: var(--text);
   background:
-    linear-gradient(180deg, rgba(197, 255, 0, 0.24), transparent 260px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.72), transparent 44%),
+    radial-gradient(circle at 9% 2%, rgba(196, 240, 0, 0.33), transparent 30%),
+    radial-gradient(circle at 100% 100%, rgba(15, 18, 19, 0.12), transparent 35%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(243, 246, 245, 0.92)),
     var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -40,6 +41,7 @@ body {
   min-width: 320px;
   min-height: 100svh;
   margin: 0;
+  background: transparent;
 }
 
 button,
